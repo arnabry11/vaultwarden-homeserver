@@ -1,0 +1,6 @@
+.env
+*.7z
+*.zip
+*.tgz
+vw-data*
+rclone.conf

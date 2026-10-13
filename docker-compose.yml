@@ -1,0 +1,55 @@
+# Vaultwarden + Tailscale sidecar (HTTPS) + daily encrypted backup to Google Drive
+# All settings come from .env (copy .env.example -> .env)
+
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: vault-tailscale
+    hostname: vault
+    restart: always
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}          # only needed on first start
+      TS_HOSTNAME: vault
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./serve.json:/config/serve.json:ro
+
+  vaultwarden:
+    image: vaultwarden/server:latest       # consider pinning a version tag
+    container_name: vaultwarden
+    restart: always
+    environment:
+      DOMAIN: "https://${VAULT_DOMAIN}"
+      SIGNUPS_ALLOWED: "${SIGNUPS_ALLOWED:-false}"
+      # ADMIN_TOKEN: "<argon2 hash>"       # optional, enables /admin
+    volumes:
+      - vaultwarden-data:/data/
+    # No "ports:" - reachable only through the Tailscale sidecar
+
+  backup:
+    image: ttionya/vaultwarden-backup:latest
+    container_name: vaultwarden-backup
+    restart: always
+    depends_on:
+      - vaultwarden
+    environment:
+      RCLONE_REMOTE_NAME: "VaultwardenGDrive"   # must match the name used in `rclone config`
+      RCLONE_REMOTE_DIR: "/VaultwardenBackup/"  # folder in Google Drive
+      CRON: "0 2 * * *"                         # daily at 02:00
+      ZIP_ENABLE: "TRUE"
+      ZIP_TYPE: "7z"                            # 7z also encrypts file names
+      ZIP_PASSWORD: "${ZIP_PASSWORD}"
+      BACKUP_KEEP_DAYS: 30                      # 0 = keep forever
+      TIMEZONE: "Asia/Kolkata"
+    volumes:
+      - vaultwarden-data:/bitwarden/data/
+      - vaultwarden-rclone-data:/config/        # holds the rclone / Google Drive token
+
+volumes:
+  vaultwarden-data:
+    name: vaultwarden-data
+  vaultwarden-rclone-data:
+    name: vaultwarden-rclone-data
+  tailscale-state:
